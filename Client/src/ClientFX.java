@@ -1032,26 +1032,26 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
         }
 
         /**
-         * Re-renders the remote contact avatar in the top-left corner (76px normal, 134px in-call).
+         * Re-renders the remote contact avatar in the top-left corner (76px normal, 228px in-call [200% bigger]).
          */
         void refreshContactAvatar() {
-            int size = inCall ? 134 : 76;
+            int size = inCall ? 228 : 76;
             contactAvatarContainer.getChildren().setAll(createAeroAvatar(size, target, PresenceStatus.AVAILABLE, null));
         }
 
         /**
-         * Re-renders the self avatar in the bottom-left corner with current presence and picture.
+         * Re-renders the self avatar in the bottom-left corner with current presence and picture (76px normal, 228px in-call).
          */
         void refreshMyAvatar() {
-            int size = inCall ? 134 : 76;
+            int size = inCall ? 228 : 76;
             selfAvatarContainer.getChildren().setAll(createAeroAvatar(size, myUsername, myPresence, myCustomAvatarFile));
         }
 
         /**
-         * Prepares and docks live video stream displays inside the enlarged avatar squares.
+         * Prepares and docks live video stream displays inside the 200% enlarged video call squares (228x228).
          */
         private void setupVideoViews() {
-            int videoSize = 134;
+            int videoSize = 228;
 
             remoteVideoView.setFitWidth(videoSize);
             remoteVideoView.setFitHeight(videoSize);
@@ -1135,7 +1135,7 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
 
         /**
          * Transitions the conversation window into active in-call mode.
-         * Expands the 2 avatar squares by ~75% (76px -> 134px) while leaving the
+         * Expands the 2 avatar squares by 200% (76px -> 228px) while leaving the
          * chat column to the side untouched, and starts the media streaming services.
          */
         void enterCallMode(boolean video) {
@@ -1145,14 +1145,14 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
             callDurationSeconds = 0;
             callDurationLabel.setText("00:00");
 
-            // Expand stage width by 60px so the chat area retains its exact size
-            stage.setWidth(stage.getWidth() + 60);
+            // Expand stage width by 152px (difference between 228px and 76px) so the chat area retains its exact size
+            stage.setWidth(stage.getWidth() + 152);
 
             // Hide calling banner
             callBanner.setVisible(false);
             callBanner.setManaged(false);
 
-            // Configure enlarged avatar/video views (134x134)
+            // Configure 200% enlarged avatar/video views (228x228)
             if (video) {
                 setupVideoViews();
                 callCameraBtn.setVisible(true);
@@ -1240,7 +1240,7 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
             callControlBox.setManaged(false);
 
             // Restore window width
-            stage.setWidth(stage.getWidth() - 60);
+            stage.setWidth(stage.getWidth() - 152);
 
             appendSystemNotice(reason != null ? reason : "Call ended.");
         }
