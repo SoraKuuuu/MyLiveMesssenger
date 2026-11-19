@@ -1,3 +1,4 @@
+import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.*;
@@ -35,6 +36,7 @@ public class ChatClient {
     public static final byte TYPE_FILE_CHUNK         = 10;
     public static final byte TYPE_FILE_CANCEL        = 11;
     public static final byte TYPE_CALL_SIGNAL        = 12; // Voice / Video Call signaling
+    public static final byte TYPE_PRESENCE           = 13; // Presence Status updates (AVAILABLE, BUSY, AWAY, APPEAR_OFFLINE)
     public static final int MEDIA_PORT               = 5001; // UDP Media Relay Port
 
     private Socket socket;
@@ -72,6 +74,7 @@ public class ChatClient {
         void onAudioMessageReceived(String sender, String recipient, String timestamp, String fileName, long fileSize, String fileId, boolean isMe);
         void onSystemMessage(String timestamp, String message, String recipient);
         void onUserListUpdated(List<String> onlineUsers);
+        void onUserPresenceChanged(String username, String presence);
         void onCallSignalReceived(String sender, String recipient, String timestamp, String signalType, String payload);
     }
 
@@ -187,14 +190,27 @@ public class ChatClient {
                         String timestamp = in.readUTF();
                         String meta = in.readUTF();
                         List<String> users = new ArrayList<>();
+                        Map<String, String> presences = new HashMap<>();
                         if (meta != null && !meta.trim().isEmpty()) {
                             for (String u : meta.split(",")) {
                                 String c = u.trim();
-                                if (!c.isEmpty()) users.add(c);
+                                if (!c.isEmpty()) {
+                                    if (c.contains(":")) {
+                                        String[] parts = c.split(":", 2);
+                                        users.add(parts[0]);
+                                        presences.put(parts[0], parts[1]);
+                                    } else {
+                                        users.add(c);
+                                        presences.put(c, "AVAILABLE");
+                                    }
+                                }
                             }
                         }
                         for (ChatClientListener listener : listeners) {
                             listener.onUserListUpdated(users);
+                            for (Map.Entry<String, String> entry : presences.entrySet()) {
+                                listener.onUserPresenceChanged(entry.getKey(), entry.getValue());
+                            }
                         }
 
                     } else if (type == TYPE_TEXT) {
@@ -286,6 +302,13 @@ public class ChatClient {
                         for (ChatClientListener listener : listeners) {
                             listener.onCallSignalReceived(sender, recipient, timestamp, signalType, payload);
                         }
+
+                    } else if (type == TYPE_PRESENCE) {
+                        String sender = in.readUTF();
+                        String presence = in.readUTF();
+                        for (ChatClientListener listener : listeners) {
+                            listener.onUserPresenceChanged(sender, presence);
+                        }
                     }
                 }
             } catch (IOException ex) {
@@ -300,6 +323,17 @@ public class ChatClient {
     // ========================================================================
     // Outgoing Operations (Direct Messaging & Unlimited Streaming)
     // ========================================================================
+
+    public void sendPresence(String presence) {
+        if (!isRunning || out == null) return;
+        synchronized (out) {
+            try {
+                out.writeByte(TYPE_PRESENCE);
+                out.writeUTF(presence != null ? presence : "AVAILABLE");
+                out.flush();
+            } catch (IOException ignored) {}
+        }
+    }
 
     public void sendTextMessage(String recipient, String message) throws IOException {
         if (!isConnected()) throw new IOException("Not connected to server.");
@@ -533,7 +567,7 @@ public class ChatClient {
             }
 
             BufferedImage thumb = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-            var g2 = thumb.createGraphics();
+            Graphics2D g2 = thumb.createGraphics();
             g2.drawImage(orig.getScaledInstance(w, h, Image.SCALE_SMOOTH), 0, 0, null);
             g2.dispose();
 

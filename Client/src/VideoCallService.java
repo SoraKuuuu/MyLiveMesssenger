@@ -151,7 +151,8 @@ public class VideoCallService {
                         "-framerate", String.valueOf(TARGET_FPS), "-i", "/dev/video0",
                         "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "5", "-"
                 );
-                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                String nullDevice = System.getProperty("os.name", "").toLowerCase().contains("win") ? "NUL" : "/dev/null";
+                pb.redirectError(new File(nullDevice));
                 ffmpegProcess = pb.start();
                 ffmpegStream = new BufferedInputStream(ffmpegProcess.getInputStream(), 32768);
                 System.out.println("[VideoCallService] Hardware webcam initialized on /dev/video0 at " + TARGET_FPS + " FPS");

@@ -1,11 +1,16 @@
+import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
+import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.geometry.Side;
+import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -21,7 +26,10 @@ import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.stage.FileChooser;
+import javafx.stage.Popup;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
 import java.awt.Desktop;
@@ -92,10 +100,10 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
 
     // --- Presence Status Options ---
     public enum PresenceStatus {
-        AVAILABLE("Available", "#8AC53E", "#4E841B"),
+        AVAILABLE("Online", "#8AC53E", "#4E841B"),
         BUSY("Busy", "#EF4444", "#991B1B"),
         AWAY("Away", "#F59E0B", "#B45309"),
-        APPEAR_OFFLINE("Appear Offline", "#94A3B8", "#475569");
+        APPEAR_OFFLINE("Offline", "#94A3B8", "#475569");
 
         public final String label;
         public final String hexColor;
@@ -106,12 +114,25 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
             this.hexColor = hexColor;
             this.borderHex = borderHex;
         }
+
+        public static PresenceStatus fromString(String str) {
+            if (str == null || str.trim().isEmpty()) return AVAILABLE;
+            String s = str.trim();
+            for (PresenceStatus ps : values()) {
+                if (ps.name().equalsIgnoreCase(s) || ps.label.equalsIgnoreCase(s)) return ps;
+            }
+            if (s.equalsIgnoreCase("ONLINE") || s.equalsIgnoreCase("AVAILABLE")) return AVAILABLE;
+            if (s.equalsIgnoreCase("OFFLINE") || s.equalsIgnoreCase("APPEAR_OFFLINE") || s.equalsIgnoreCase("APPEAR OFFLINE")) return APPEAR_OFFLINE;
+            return AVAILABLE;
+        }
     }
 
     // --- Network Engine & Conversation State ---
     private final ChatClient chatClient = new ChatClient();
     private final Map<String, ChatWindow> activeChatWindows = new HashMap<>();
     private final List<String> onlineBuddies = new ArrayList<>();
+    // Tracks presence status per buddy
+    private final Map<String, PresenceStatus> buddyPresences = new java.util.concurrent.ConcurrentHashMap<>();
     // Tracks unread / missed message counts per conversation target
     private final Map<String, Integer> missedMessageCounts = new HashMap<>();
 
@@ -530,8 +551,9 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
                 } else {
                     // Contact entry row
                     boolean isLobby = ChatClient.GROUP_TARGET.equalsIgnoreCase(item);
-                    Circle statusDot = new Circle(5, Color.web(isLobby ? "#2D8FDD" : "#8AC53E"));
-                    statusDot.setStroke(Color.web(isLobby ? "#1A649E" : "#4E841B"));
+                    PresenceStatus ps = isLobby ? PresenceStatus.AVAILABLE : buddyPresences.getOrDefault(item, PresenceStatus.AVAILABLE);
+                    Circle statusDot = new Circle(5, Color.web(isLobby ? "#2D8FDD" : ps.hexColor));
+                    statusDot.setStroke(Color.web(isLobby ? "#1A649E" : ps.borderHex));
 
                     // Retrieve missed / unread message count for this chat target
                     int missed = missedMessageCounts.getOrDefault(item, 0);
@@ -545,7 +567,7 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
                     }
 
                     // Left-side info: avatar, presence dot, contact display name
-                    HBox leftInfo = new HBox(7, createAeroAvatar(24, item, PresenceStatus.AVAILABLE, null), statusDot, contactLabel);
+                    HBox leftInfo = new HBox(7, createAeroAvatar(24, item, isLobby ? PresenceStatus.AVAILABLE : ps, null), statusDot, contactLabel);
                     leftInfo.setAlignment(Pos.CENTER_LEFT);
 
                     // Flexible horizontal spacer pushing the counter badge to the far right
@@ -648,6 +670,7 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
                 for (ChatWindow cw : activeChatWindows.values()) {
                     cw.refreshMyAvatar();
                 }
+                chatClient.sendPresence(myPresence.name());
             });
             menu.getItems().add(item);
         }
@@ -701,7 +724,7 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
                 matchingBuddies.add(buddy);
             }
         }
-        TreeItem<String> friendsCategory = new TreeItem<>("Friends (" + matchingBuddies.size() + " Available)");
+        TreeItem<String> friendsCategory = new TreeItem<>("Friends (" + matchingBuddies.size() + " Online)");
         for (String buddy : matchingBuddies) {
             friendsCategory.getChildren().add(new TreeItem<>(buddy));
         }
@@ -827,6 +850,9 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
         final Label uploadStatusText = new Label("");
         final Button cancelUploadBtn = new Button("\u2715 Cancel");
 
+        final Label contactStatusLbl;
+        private Popup emojiPopup = null;
+
         // Visual Containers for Profile Pictures and Live Video Feeds
         final StackPane contactAvatarContainer = new StackPane();
         final StackPane selfAvatarContainer = new StackPane();
@@ -873,8 +899,9 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
             HBox topActionBar = buildTopActionBar(isLobby);
 
             // 2. CONTACT HEADER BANNER
+            PresenceStatus initialStatus = isLobby ? PresenceStatus.AVAILABLE : buddyPresences.getOrDefault(target, PresenceStatus.AVAILABLE);
             Label contactNameLbl = createLabel(displayName, "-fx-font-size: 15px; -fx-text-fill: #1E395B; -fx-font-weight: bold;");
-            Label contactStatusLbl = createLabel("(Available)", "-fx-font-size: 12px; -fx-text-fill: #4A6B8A;");
+            contactStatusLbl = createLabel(isLobby ? "" : "(" + initialStatus.label + ")", "-fx-font-size: 12px; -fx-text-fill: #4A6B8A;");
             HBox nameRow = new HBox(5, contactNameLbl, contactStatusLbl);
             nameRow.setAlignment(Pos.BASELINE_LEFT);
 
@@ -1036,7 +1063,16 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
          */
         void refreshContactAvatar() {
             int size = inCall ? 228 : 76;
-            contactAvatarContainer.getChildren().setAll(createAeroAvatar(size, target, PresenceStatus.AVAILABLE, null));
+            boolean isLobby = ChatClient.GROUP_TARGET.equalsIgnoreCase(target);
+            PresenceStatus ps = isLobby ? PresenceStatus.AVAILABLE : buddyPresences.getOrDefault(target, PresenceStatus.AVAILABLE);
+            contactAvatarContainer.getChildren().setAll(createAeroAvatar(size, target, ps, null));
+        }
+
+        void updateContactPresence(PresenceStatus ps) {
+            boolean isLobby = ChatClient.GROUP_TARGET.equalsIgnoreCase(target);
+            if (isLobby) return;
+            contactStatusLbl.setText("(" + ps.label + ")");
+            refreshContactAvatar();
         }
 
         /**
@@ -1296,15 +1332,15 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
             // Assign vector icons
             emojiToolButton.setGraphic(IconManager.createSmileyIcon(18));
             voiceClipToolButton.setGraphic(IconManager.createMicIcon(16, Color.web("#4A6B8A")));
-            nudgeToolButton.setGraphic(IconManager.createNudgeIcon(16, Color.web("#4A6B8A")));
+            nudgeToolButton.setGraphic(IconManager.createWizzIcon(16, Color.web("#4A6B8A")));
 
             styleToolButton(emojiToolButton, "Emoticons");
             styleToolButton(voiceClipToolButton, "Send a Voice Clip");
-            styleToolButton(nudgeToolButton, "Send a Nudge!");
+            styleToolButton(nudgeToolButton, "Send a Wizz!");
 
             emojiToolButton.setOnAction(e -> displayEmoticonPalette(emojiToolButton));
             voiceClipToolButton.setOnAction(e -> toggleVoiceRecordingSession());
-            nudgeToolButton.setOnAction(e -> performSendNudge());
+            nudgeToolButton.setOnAction(e -> performSendWizz());
 
             bar.getChildren().addAll(emojiToolButton, voiceClipToolButton, nudgeToolButton);
             return bar;
@@ -1339,6 +1375,9 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
         }
 
         void destroy() {
+            if (emojiPopup != null && emojiPopup.isShowing()) {
+                emojiPopup.hide();
+            }
             if (inCall) {
                 chatClient.sendCallSignal(target, "END", "");
                 exitCallMode("Call ended.");
@@ -1352,12 +1391,13 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
         }
 
         // =====================================================================
-        // Actions: Text, Emoticon Palette, Photos, Files, Voice, Nudge
+        // Actions: Text, Emoticon Palette, Photos, Files, Voice, Wizz
         // =====================================================================
 
         void performSendTextMessage() {
             String rawText = messageInputField.getText().trim();
             if (rawText.isEmpty() || !chatClient.isConnected()) return;
+
             try {
                 chatClient.sendTextMessage(target, rawText);
                 messageInputField.clear();
@@ -1368,16 +1408,26 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
 
         /**
          * Displays the popup grid of high-res PNG emoticons from /assets/emojis/.
+         * Uses a dedicated Popup instead of ContextMenu to prevent whole-palette blue
+         * highlighting, with fixed-dimension buttons and constant border width to eliminate hover jitter.
          */
         void displayEmoticonPalette(Node anchor) {
-            ContextMenu menu = new ContextMenu();
-            menu.setStyle("-fx-background-color: white; -fx-border-color: #A0BCD6; -fx-padding: 6; "
+            if (emojiPopup != null && emojiPopup.isShowing()) {
+                emojiPopup.hide();
+                return;
+            }
+
+            emojiPopup = new Popup();
+            emojiPopup.setAutoHide(true);
+
+            VBox container = new VBox();
+            container.setStyle("-fx-background-color: #FFFFFF; -fx-border-color: #A0BCD6; -fx-border-width: 1; "
+                    + "-fx-background-radius: 4; -fx-border-radius: 4; -fx-padding: 6; "
                     + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 8, 0, 0, 2);");
 
             GridPane grid = new GridPane();
-            grid.setHgap(4);
-            grid.setVgap(4);
-            grid.setPadding(new Insets(4));
+            grid.setHgap(3);
+            grid.setVgap(3);
 
             int col = 0;
             int row = 0;
@@ -1388,14 +1438,25 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
                 Node emojiGraphic = IconManager.createEmojiView(code, 22);
                 Button cellBtn = new Button("", emojiGraphic);
                 cellBtn.setTooltip(new Tooltip(shortcut));
-                cellBtn.setStyle("-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 3;");
-                cellBtn.setOnMouseEntered(ev -> cellBtn.setStyle("-fx-background-color: #D9EAF8; -fx-border-color: #7FA6C9; -fx-border-radius: 2; -fx-cursor: hand; -fx-padding: 3;"));
-                cellBtn.setOnMouseExited(ev -> cellBtn.setStyle("-fx-background-color: transparent; -fx-cursor: hand; -fx-padding: 3;"));
+                cellBtn.setMinSize(30, 30);
+                cellBtn.setPrefSize(30, 30);
+                cellBtn.setMaxSize(30, 30);
+                cellBtn.setCursor(Cursor.HAND);
+
+                // Constant 1px border ensures layout dimensions never shift on hover
+                String normalStyle = "-fx-background-color: transparent; -fx-border-color: transparent; "
+                        + "-fx-border-width: 1; -fx-border-radius: 3; -fx-background-radius: 3; -fx-padding: 0; -fx-alignment: center;";
+                String hoverStyle = "-fx-background-color: #D9EAF8; -fx-border-color: #7FA6C9; "
+                        + "-fx-border-width: 1; -fx-border-radius: 3; -fx-background-radius: 3; -fx-padding: 0; -fx-alignment: center;";
+
+                cellBtn.setStyle(normalStyle);
+                cellBtn.setOnMouseEntered(ev -> cellBtn.setStyle(hoverStyle));
+                cellBtn.setOnMouseExited(ev -> cellBtn.setStyle(normalStyle));
 
                 cellBtn.setOnAction(ev -> {
                     // Append structured emoji token to composer
                     messageInputField.appendText(" [emoji:" + code + "] ");
-                    menu.hide();
+                    if (emojiPopup != null) emojiPopup.hide();
                     messageInputField.requestFocus();
                 });
 
@@ -1407,9 +1468,17 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
                 }
             }
 
-            CustomMenuItem customItem = new CustomMenuItem(grid, false);
-            menu.getItems().add(customItem);
-            menu.show(anchor, Side.TOP, 0, 0);
+            container.getChildren().add(grid);
+            emojiPopup.getContent().setAll(container);
+
+            Point2D screenCoords = anchor.localToScreen(0, 0);
+            if (screenCoords != null) {
+                container.applyCss();
+                container.layout();
+                double popupHeight = container.prefHeight(-1);
+                if (popupHeight <= 0) popupHeight = 185;
+                emojiPopup.show(anchor, screenCoords.getX(), screenCoords.getY() - popupHeight - 4);
+            }
         }
 
         void handlePhotoSend() {
@@ -1535,20 +1604,34 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
             }
         }
 
-        void performSendNudge() {
+        void performSendWizz() {
             if (!chatClient.isConnected()) return;
             try {
-                chatClient.sendTextMessage(target, "[NUDGE]");
+                chatClient.sendTextMessage(target, "[WIZZ]");
                 executeWindowShake();
-                appendSystemNotice("---------- You just sent a nudge. ----------");
+                AudioService.playWizzSound();
+                appendSystemNotice("---------- You just sent a wizz. ----------");
             } catch (IOException ex) {
-                appendSystemNotice("Failed to send nudge: " + ex.getMessage());
+                appendSystemNotice("Failed to send wizz: " + ex.getMessage());
             }
         }
 
+        void performSendNudge() {
+            performSendWizz();
+        }
+
+        void handleIncomingWizz(String sender) {
+            Platform.runLater(() -> {
+                stage.setIconified(false);
+                stage.toFront();
+                stage.requestFocus();
+                executeWindowShake();
+                appendSystemNotice("---------- " + sender + " just sent you a wizz! ----------");
+            });
+        }
+
         void handleIncomingNudge(String sender) {
-            executeWindowShake();
-            appendSystemNotice("---------- " + sender + " just sent you a nudge! ----------");
+            handleIncomingWizz(sender);
         }
 
         private void executeWindowShake() {
@@ -1920,6 +2003,7 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
         Platform.runLater(() -> {
             this.myUsername = username;
             displayMainView();
+            chatClient.sendPresence(myPresence.name());
         });
     }
 
@@ -1946,14 +2030,14 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
     public void onTextMessageReceived(String sender, String recipient, String timestamp, String text, boolean isMe) {
         Platform.runLater(() -> {
             String key = resolveConversationKey(sender, recipient, isMe);
-            if ("[NUDGE]".equalsIgnoreCase(text.trim())) {
+            String trimmed = text.trim();
+            if ("[WIZZ]".equalsIgnoreCase(trimmed) || "[NUDGE]".equalsIgnoreCase(trimmed)) {
                 if (!isMe) {
-                    ChatWindow w = activeChatWindows.get(key);
-                    if (w != null && w.stage.isShowing()) {
-                        w.handleIncomingNudge(sender);
-                    } else {
-                        incrementMissedMessages(key);
+                    ChatWindow w = openChatWindow(sender);
+                    if (w != null) {
+                        w.handleIncomingWizz(sender);
                     }
+                    showWizzNotification(sender);
                 }
                 return;
             }
@@ -2055,9 +2139,115 @@ public class ClientFX extends Application implements ChatClient.ChatClientListen
                     onlineBuddies.add(u);
                 }
             }
+            buddyPresences.keySet().removeIf(k -> !onlineBuddies.contains(k));
             if (contactTreeView != null) {
                 refreshContactTree();
             }
+            for (Map.Entry<String, ChatWindow> entry : activeChatWindows.entrySet()) {
+                String target = entry.getKey();
+                if (!ChatClient.GROUP_TARGET.equalsIgnoreCase(target)) {
+                    PresenceStatus ps = buddyPresences.getOrDefault(target,
+                            onlineBuddies.contains(target) ? PresenceStatus.AVAILABLE : PresenceStatus.APPEAR_OFFLINE);
+                    entry.getValue().updateContactPresence(ps);
+                }
+            }
+        });
+    }
+
+    @Override
+    public void onUserPresenceChanged(String username, String presenceStr) {
+        Platform.runLater(() -> {
+            if (username == null || username.equalsIgnoreCase(myUsername)) return;
+            PresenceStatus ps = PresenceStatus.fromString(presenceStr);
+            buddyPresences.put(username, ps);
+            if (contactTreeView != null) {
+                refreshContactTree();
+            }
+            ChatWindow cw = activeChatWindows.get(username);
+            if (cw != null) {
+                cw.updateContactPresence(ps);
+            }
+        });
+    }
+
+    /**
+     * Displays a desktop notification toast popup in the bottom right corner of the screen
+     * when a Wizz is received, playing alert sound and focusing conversation upon click.
+     */
+    private void showWizzNotification(String sender) {
+        Platform.runLater(() -> {
+            try {
+                Stage toast = new Stage(StageStyle.TRANSPARENT);
+                toast.setAlwaysOnTop(true);
+
+                HBox root = new HBox(12);
+                root.setAlignment(Pos.CENTER_LEFT);
+                root.setPadding(new Insets(12, 16, 12, 16));
+                root.setStyle("-fx-background-color: linear-gradient(to bottom, #FFFFFF, #E8F2FE); "
+                        + "-fx-border-color: #3B82F6; -fx-border-width: 1.5; -fx-border-radius: 8; "
+                        + "-fx-background-radius: 8; "
+                        + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 3); "
+                        + "-fx-cursor: hand;");
+
+                Node icon = IconManager.createWizzIcon(28, Color.web("#D97706"));
+                VBox textVBox = new VBox(2);
+                Label titleLabel = new Label("Wizz!");
+                titleLabel.setStyle("-fx-font-family: '" + FONT_FAMILY + "'; -fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #1E3A8A;");
+                Label msgLabel = new Label(sender + " just sent you a wizz!");
+                msgLabel.setStyle("-fx-font-family: '" + FONT_FAMILY + "'; -fx-font-size: 12px; -fx-text-fill: #334155;");
+                textVBox.getChildren().addAll(titleLabel, msgLabel);
+
+                Button closeBtn = new Button("✕");
+                closeBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #94A3B8; -fx-font-size: 11px; -fx-cursor: hand; -fx-padding: 0 4 0 4;");
+                closeBtn.setOnAction(e -> toast.close());
+
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                root.getChildren().addAll(icon, textVBox, spacer, closeBtn);
+
+                root.setOnMouseClicked(e -> {
+                    if (e.getTarget() != closeBtn) {
+                        ChatWindow cw = openChatWindow(sender);
+                        if (cw != null) {
+                            cw.stage.setIconified(false);
+                            cw.stage.toFront();
+                            cw.stage.requestFocus();
+                        }
+                        toast.close();
+                    }
+                });
+
+                Scene scene = new Scene(root);
+                scene.setFill(Color.TRANSPARENT);
+                toast.setScene(scene);
+
+                Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
+                toast.setX(bounds.getMaxX() - 320);
+                toast.setY(bounds.getMaxY() - 85);
+                toast.show();
+
+                AudioService.playWizzSound();
+
+                PauseTransition pause = new PauseTransition(Duration.seconds(4.5));
+                pause.setOnFinished(ev -> {
+                    FadeTransition fade = new FadeTransition(Duration.millis(500), root);
+                    fade.setFromValue(1.0);
+                    fade.setToValue(0.0);
+                    fade.setOnFinished(fev -> toast.close());
+                    fade.play();
+                });
+                pause.play();
+
+            } catch (Exception ex) {
+                System.err.println("Could not display wizz toast: " + ex.getMessage());
+            }
+
+            try {
+                if (System.getProperty("os.name", "").toLowerCase().contains("linux")) {
+                    new ProcessBuilder("notify-send", "-a", "Messenger", "Wizz!", sender + " just sent you a wizz!").start();
+                }
+            } catch (Exception ignored) {}
         });
     }
 

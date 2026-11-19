@@ -253,4 +253,38 @@ public class AudioService {
             return false;
         }
     }
+
+    /**
+     * Synthesizes and plays a dual-frequency vibrating buzzer sound for incoming and outgoing Wizz alerts.
+     */
+    public static void playWizzSound() {
+        new Thread(() -> {
+            try {
+                AudioFormat format = new AudioFormat(8000f, 8, 1, false, false);
+                DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+                if (!AudioSystem.isLineSupported(info)) {
+                    java.awt.Toolkit.getDefaultToolkit().beep();
+                    return;
+                }
+                SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info);
+                line.open(format, 4096);
+                line.start();
+                byte[] buf = new byte[8000 * 350 / 1000];
+                for (int i = 0; i < buf.length; i++) {
+                    double time = (double) i / 8000.0;
+                    double freq = 220.0 + 60.0 * Math.sin(2.0 * Math.PI * 25.0 * time);
+                    double sample = Math.sin(2.0 * Math.PI * freq * time);
+                    buf[i] = (byte) (128 + (int) (110 * sample));
+                }
+                line.write(buf, 0, buf.length);
+                line.drain();
+                line.stop();
+                line.close();
+            } catch (Exception e) {
+                try {
+                    java.awt.Toolkit.getDefaultToolkit().beep();
+                } catch (Exception ignored) {}
+            }
+        }, "WizzSoundThread").start();
+    }
 }

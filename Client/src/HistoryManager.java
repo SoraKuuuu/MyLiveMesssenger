@@ -34,8 +34,8 @@ public class HistoryManager {
     }
 
     private static File getHistoryFile(String myName, String target) {
-        String safeUser = (myName == null || myName.isBlank()) ? "default" : myName.replaceAll("[^a-zA-Z0-9_.-]", "_");
-        String safeTarget = (target == null || target.isBlank()) ? "GROUP" : target.replaceAll("[^a-zA-Z0-9_.-]", "_");
+        String safeUser = (myName == null || myName.trim().isEmpty()) ? "default" : myName.replaceAll("[^a-zA-Z0-9_.-]", "_");
+        String safeTarget = (target == null || target.trim().isEmpty()) ? "GROUP" : target.replaceAll("[^a-zA-Z0-9_.-]", "_");
         File dir = new File(BASE_DIR, safeUser);
         if (!dir.exists()) dir.mkdirs();
         return new File(dir, safeTarget + ".history");
@@ -69,7 +69,7 @@ public class HistoryManager {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
             String line;
             while ((line = br.readLine()) != null) {
-                if (line.isBlank()) continue;
+                if (line.trim().isEmpty()) continue;
                 String[] parts = line.split("\\|", -1);
                 if (parts.length >= 6) {
                     try {

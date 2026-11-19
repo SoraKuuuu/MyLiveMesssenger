@@ -195,17 +195,24 @@ public class IconManager {
     }
 
     /**
-     * Vibrating window / phone vector icon for the Nudge button.
+     * Vibrating window / alert vector icon for the Wizz button.
+     */
+    public static Node createWizzIcon(double size, Color color) {
+        SVGPath wizz = new SVGPath();
+        wizz.setContent("M16 1H8C6.34 1 5 2.34 5 4v16c0 1.66 1.34 3 3 3h8c1.66 0 3-1.34 3-3V4c0-1.66-1.34-3-3-3zm-2 20h-4v-1h4v1zm3.25-3H6.75V4h10.5v14z" +
+                       "M1 9h2v6H1zm20 0h2v6h-2zM3.5 5.5l1.41-1.41 1.41 1.41-1.41 1.41zm14.18 11.59l1.41-1.41 1.41 1.41-1.41 1.41z");
+        wizz.setFill(color);
+        double scale = size / 24.0;
+        wizz.setScaleX(scale);
+        wizz.setScaleY(scale);
+        return wizz;
+    }
+
+    /**
+     * Backward-compatible alias for createWizzIcon.
      */
     public static Node createNudgeIcon(double size, Color color) {
-        SVGPath nudge = new SVGPath();
-        nudge.setContent("M16 1H8C6.34 1 5 2.34 5 4v16c0 1.66 1.34 3 3 3h8c1.66 0 3-1.34 3-3V4c0-1.66-1.34-3-3-3zm-2 20h-4v-1h4v1zm3.25-3H6.75V4h10.5v14z" +
-                       "M1 9h2v6H1zm20 0h2v6h-2zM3.5 5.5l1.41-1.41 1.41 1.41-1.41 1.41zm14.18 11.59l1.41-1.41 1.41 1.41-1.41 1.41z");
-        nudge.setFill(color);
-        double scale = size / 24.0;
-        nudge.setScaleX(scale);
-        nudge.setScaleY(scale);
-        return nudge;
+        return createWizzIcon(size, color);
     }
 
     /**

@@ -13,6 +13,7 @@ target/
 out/
 **/out/
 *.class
+*.jar
 
 # IDE and Editor configurations
 .idea/

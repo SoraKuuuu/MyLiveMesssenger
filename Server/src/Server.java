@@ -50,6 +50,7 @@ public class Server {
     public static final byte TYPE_FILE_CHUNK         = 10; // Client -> Server: Chunk of data (len, bytes, isLast)
     public static final byte TYPE_FILE_CANCEL        = 11; // Client -> Server: Cancel current upload! Delete from disk!
     public static final byte TYPE_CALL_SIGNAL        = 12; // Voice/Video Call Signaling (INVITE, ACCEPT, REJECT, END, etc.)
+    public static final byte TYPE_PRESENCE           = 13; // User Presence Status updates (AVAILABLE, BUSY, AWAY, APPEAR_OFFLINE)
 
     public static final int MEDIA_PORT               = 5001; // UDP Port for low-latency Voice & Video relay
 
@@ -237,7 +238,18 @@ public class Server {
     }
 
     /**
-     * Broadcasts current online user list to everyone.
+     * Routes presence status updates across all connected clients.
+     */
+    public static void routePresencePacket(String sender, String presence) {
+        synchronized (clients) {
+            for (ClientHandler client : clients) {
+                client.sendPresencePacket(sender, presence);
+            }
+        }
+    }
+
+    /**
+     * Broadcasts current online user list with presence statuses to everyone.
      */
     public static void broadcastUserList() {
         synchronized (clients) {
@@ -245,7 +257,7 @@ public class Server {
             for (ClientHandler client : clients) {
                 if (client.displayName != null && !client.displayName.isEmpty()) {
                     if (sb.length() > 0) sb.append(",");
-                    sb.append(client.displayName);
+                    sb.append(client.displayName).append(":").append(client.presence);
                 }
             }
             String userList = sb.toString();
@@ -267,6 +279,7 @@ public class Server {
         private DataInputStream in;
         private DataOutputStream out;
         private String displayName;
+        private String presence = "AVAILABLE";
 
         // Active upload state for this client
         private File activeUploadFile;
@@ -371,6 +384,12 @@ public class Server {
                         String payload = in.readUTF();
                         System.out.println(time + " [CALL " + signalType + "] " + displayName + " -> " + recipient);
                         routeCallSignal(displayName, recipient, time, signalType, payload);
+
+                    } else if (type == TYPE_PRESENCE) {
+                        String newPresence = in.readUTF();
+                        this.presence = (newPresence != null && !newPresence.trim().isEmpty()) ? newPresence.trim() : "AVAILABLE";
+                        System.out.println(time + " [PRESENCE] " + displayName + " changed status to " + this.presence);
+                        routePresencePacket(displayName, this.presence);
                     }
                 }
             } catch (IOException e) {
@@ -463,6 +482,15 @@ public class Server {
                 out.writeUTF(timestamp);
                 out.writeUTF(signalType != null ? signalType : "");
                 out.writeUTF(payload != null ? payload : "");
+                out.flush();
+            } catch (IOException ignored) {}
+        }
+
+        public synchronized void sendPresencePacket(String sender, String presence) {
+            try {
+                out.writeByte(TYPE_PRESENCE);
+                out.writeUTF(sender);
+                out.writeUTF(presence != null ? presence : "AVAILABLE");
                 out.flush();
             } catch (IOException ignored) {}
         }
